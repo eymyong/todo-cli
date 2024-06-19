@@ -1,271 +1,385 @@
 package test
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
-	"strconv"
-	"strings"
+
+	"github.com/google/uuid"
 )
 
 /*
-	[main.exe --add "kuyhee"]   ==> {"id": 2, "text": "kuyhee"}
-	main.exe --get 2          ==> {"id": 2, "text": "kuyhee"}
-	main.exe --rm 2
-	main.exe --update  2 "heekuy"  ==> {"id": 2, "text": "heekuy"}
-	main.exe                  ==> []
+[main.exe --add "kuyhee"]   ==> {"id": 2, "text": "kuyhee"}
+main.exe --get 2          ==> {"id": 2, "text": "kuyhee"}
+main.exe --rm 2
+main.exe --update  2 "heekuy"  ==> {"id": 2, "text": "heekuy"}
+main.exe                  ==> []
 */
+type Mode string
 
-func TestApi() {
+const (
+	ModeAdd    Mode = "--add"
+	ModeGetAll Mode = "--get all"
+	ModeGet    Mode = "--get"
+	ModeUpdate Mode = "--update"
+	ModeRemove Mode = "--rm"
+)
+
+type job struct {
+	id   string
+	data string
+	mode Mode
+}
+
+type todo struct {
+	Id   string `json:"id"`
+	Data string `json:"data"`
+}
+
+func Test() {
 	args := os.Args
-	if len(args) < 1 {
-		fmt.Println("Not expect")
-		return
+	job, err := parse(args)
+	if err != nil {
+		panic(err)
 	}
-	// 1
-	// list
+	fileName := "todo.json"
+	switch job.mode {
+	case ModeAdd:
+		add(fileName, job.data)
+	case ModeGetAll:
+		get(fileName, job.id)
+	case ModeGet:
+		get(fileName, job.id)
+	case ModeRemove:
+		rm(fileName, job.id)
+	case ModeUpdate:
+		update(fileName, job.id, job.data)
+	}
+	if err != nil {
+		panic("Incorrect Mode")
+	}
+
+}
+
+func parse(args []string) (job, error) {
 	if len(args) == 1 {
-		b, err := os.ReadFile("todo")
-		if err != nil {
-			fmt.Println(err)
-		}
-		fmt.Println(string(b))
-		return
+		return job{}, errors.New("Not order")
 	}
-	// ==2 if not order
+
 	if len(args) == 2 {
 		if args[1] == "--add" {
-			fmt.Println("Not information to add")
-			return
+			return job{}, errors.New("There is no information to add")
 		}
 		if args[1] == "--get" {
-			fmt.Println("Not information to get")
-			return
-		}
-		if args[1] == "--rm" {
-			fmt.Println("Not information to rm")
-			return
+			return job{}, errors.New("There is no information to get")
 		}
 		if args[1] == "--update" {
-			fmt.Println("Not information to update")
-			return
+			return job{}, errors.New("There is no information to update")
 		}
-		fmt.Println("not enough args")
-		return
+		if args[1] == "--rm" {
+			return job{}, errors.New("There is no information to rm")
+		}
 	}
 
-	if len(args) > 2 {
+	if len(args) == 3 {
 		if args[1] == "--add" {
-			add("todo", args[2])
-			return
+			return job{mode: ModeAdd, data: args[2]}, nil
 		}
 		if args[1] == "--get" {
 			if args[2] == "all" {
-				getAll := readFile("todo")
-				fmt.Println("getAll: \n", getAll)
-				return
+				return job{mode: ModeGetAll, id: args[2]}, nil
 			}
-			id, val := get("todo", args[2])
-			fmt.Printf("id:%s = %s", id, val)
-			return
+			return job{mode: ModeGet, id: args[2]}, nil
 		}
 		if args[1] == "--rm" {
-			rm(args[2])
-			return
+			return job{mode: ModeRemove, id: args[2]}, nil
 		}
-
 		if args[1] == "--update" {
-			if len(args) == 3 {
-				fmt.Println("No data to Update")
-				return
-			}
-			update(args[2], args[3])
-			return
+			fmt.Println("Not data to update")
+			return job{}, nil
 		}
 
-		fmt.Println("wrong command (need: --add,--get,--rm)")
-		return
 	}
+
+	if len(args) == 4 {
+		if args[1] == "--update" {
+			return job{mode: ModeUpdate, id: args[2], data: args[3]}, nil
+		}
+	}
+
+	return job{}, errors.New("Input incorrect")
 
 }
 
-func rm(id string) {
-	dataStr := readFile("todo")
-	if dataStr == "" {
-		fmt.Println("Not data")
-		return
-	}
-
-	lines := strings.Split(dataStr, "\n")
-	var newdata string
-	for i := range lines {
-		line := strings.TrimSpace(lines[i])
-		words := strings.Split(line, ":")
-		words[0] = strings.TrimSpace(words[0])
-		words[1] = strings.TrimSpace(words[1])
-
-		if id != words[0] {
-			if len(newdata) == 0 {
-				newdata = newdata + lines[i]
-				continue
-			}
-			if len(newdata) > 0 {
-				newdata = newdata + "\n" + lines[i]
-				continue
-			}
-		}
-
-		fmt.Println("You Delete: ", id)
-	}
-
-	err := os.WriteFile("todo", []byte(newdata), 0664)
-	if err != nil {
-		panic("connot WriteFile")
-	}
-	fmt.Println("Completely deleted")
-
-}
-
-func update(id, newValue string) {
-	dataStr := readFile("todo")
-	if dataStr == "" {
-		fmt.Println("Not Data")
-		return
-	}
-	lines := getLines(dataStr)
-	var newdata string
-	for i := range lines {
-		words := strings.Split(lines[i], ":")
-		words[0] = strings.TrimSpace(words[0])
-		words[1] = strings.TrimSpace(words[1])
-		if id != words[0] {
-			if len(newdata) == 0 {
-				newdata = newdata + lines[i]
-				continue
-			}
-			if len(newdata) > 0 {
-				newdata = newdata + "\n" + lines[i]
-				continue
-			}
-		}
-
-		if id == words[0] {
-			if len(newdata) == 0 {
-				words[1] = newValue
-				newdata = newdata + id + ": " + words[1]
-				fmt.Println("Update ", id)
-				continue
-			}
-			if len(newdata) > 0 {
-				words[1] = newValue
-				newdata = newdata + "\n" + id + ": " + words[1]
-				fmt.Println("Update ", id)
-				continue
-			}
-		}
-	}
-	err := os.WriteFile("todo", []byte(newdata), 0664)
+func update(fileName, id, data string) {
+	b, err := readFile(fileName)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("Completely Update")
 
-}
-
-func get(fileName, id string) (string, string) {
-	dataStr := readFile(fileName)
-
-	lines := getLines(dataStr)
-	_, val := getValue(id, lines)
-
-	return id, val
-}
-
-// func removeStr(s string) string {
-// 	return ""
-// }
-
-func getLines(data string) []string {
-	lines := strings.Split(data, "\n")
-	//fmt.Printf("get lines: %s\n", lines)
-	return lines
-}
-
-func getValue(id string, lines []string) (string, string) {
-
-	for i := range lines {
-		words := strings.Split(lines[i], ":")
-		words[0] = strings.TrimSpace(words[0])
-		words[1] = strings.TrimSpace(words[1])
-		if id == words[0] {
-			return words[0], words[1]
-		}
-	}
-	return "", "Not ID"
-}
-
-func add(fileName, input string) {
-	dataStr := readFile(fileName)
-	// if err != nil {
-	// 	if !errors.Is(err, errNotFound) {
-	// 		fmt.Println(err)
-	// 		return
-	// 	}
-
-	// write new data
-	// }
-	//var data string
-
-	// if dataStr == "" {
-	// 	dataStr = input + ": " + args[3]
-	// }
-
-	lines := strings.Split(dataStr, "\n")
-	var numberStr string
-	for i := range lines {
-		words := strings.Split(lines[i], ":")
-		words[0] = strings.TrimSpace(words[0])
-		numberStr = words[0]
-	}
-	if len(numberStr) == 0 {
-		numberStr = "1"
-	}
-
-	numberInt, err := strconv.Atoi(numberStr)
-	if err != nil {
-		panic("not number")
-	}
-
-	newID := fmt.Sprintf("%d", numberInt+1)
-	line := newID + ": " + input
-
-	var addData string
-	if len(dataStr) > 0 {
-		addData = dataStr + "\n" + line
-	}
-
-	if len(dataStr) == 0 {
-		dataStr = dataStr + line
-		addData = dataStr
-	}
-
-	err = os.WriteFile(fileName, []byte(addData), 0664)
-	if err != nil {
-		fmt.Println(err)
+	if len(b) == 0 {
+		fmt.Println("No Data in File")
 		return
 	}
-	fmt.Printf("add %s succes", input)
+
+	listTodo, err := unmarshal(b)
+	if err != nil {
+		panic(err)
+	}
+	newListTodo := []todo{}
+	var checkID bool
+	for _, todo := range listTodo {
+		if id == todo.Id {
+			checkID = true
+			todo.Data = data
+			newListTodo = append(newListTodo, todo)
+			continue
+		}
+		newListTodo = append(newListTodo, todo)
+	}
+
+	if checkID != true {
+		fmt.Printf("Not found ID: %s", id)
+		return
+	}
+
+	newByte, err := marshal(newListTodo)
+	if err != nil {
+		panic(err)
+	}
+
+	err = writeFile(fileName, newByte)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("ID to Update = ID: %s\nData = %s\nSucceed", id, data)
 }
 
-// var (
-// 	errNotFound = errors.New("empty data")
-// )
+func rm(fileName, id string) {
+	b, err := readFile(fileName)
+	if err != nil {
+		panic(err)
+	}
 
-func readFile(fileName string) string {
+	if len(b) == 0 {
+		fmt.Println("No Data in File")
+		return
+	}
+
+	listTodo, err := unmarshal(b)
+	if err != nil {
+		panic(err)
+	}
+
+	var newListTodo []todo
+	var checkID bool
+	for _, todo := range listTodo {
+		if todo.Id == id {
+			checkID = true
+			continue
+		}
+		newListTodo = append(newListTodo, todo)
+	}
+
+	if checkID != true {
+		fmt.Printf("Not found ID: %s", id)
+		return
+	}
+
+	fmt.Printf("rm to ID = ID: %s\nSucceed", id)
+	newByte, err := marshal(newListTodo)
+	if err != nil {
+		panic(err)
+	}
+
+	err = writeFile(fileName, newByte)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func add(fileName string, data string) {
+	b, err := readFile(fileName)
+	if err != nil {
+		panic(err)
+	}
+	newTodoList := []todo{}
+	newTodo := todo{Id: uuid.NewString(), Data: data}
+
+	if len(b) == 0 {
+		newTodoList = append(newTodoList, newTodo)
+
+		newByte, err := marshal(newTodoList)
+		if err != nil {
+			panic(err)
+		}
+
+		err = writeFile(fileName, newByte)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Printf("Add Data: %s", data)
+		return
+	}
+
+	if len(b) >= 0 {
+		todoList, err := unmarshal(b)
+		if err != nil {
+			panic(err)
+		}
+
+		todoList = append(todoList, newTodo)
+
+		newByte, err := marshal(todoList)
+		if err != nil {
+			panic(err)
+		}
+
+		err = writeFile(fileName, newByte)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Printf("Data to add = %s", data)
+	}
+
+}
+
+func get(fileName string, id string) {
+	b, err := readFile(fileName)
+	if err != nil {
+		panic(err)
+	}
+
+	if len(b) == 0 || string(b) == "nil" {
+		fmt.Println("No Data in File")
+		return
+	}
+
+	listTodo, err := unmarshal(b)
+	if err != nil {
+		panic(err)
+	}
+
+	if id == "all" {
+		fmt.Printf("All Data\n%s", listTodo)
+		return
+	}
+
+	c := checkID(listTodo, id)
+	if c != "" {
+		fmt.Printf("ID: %s\nData: %s", id, c)
+	}
+}
+
+func checkID(listTodo []todo, id string) string {
+	for _, v := range listTodo {
+		if v.Id == id {
+			return v.Data
+		}
+	}
+	fmt.Printf("Not found ID: %s", id)
+	return ""
+}
+
+// ===============================================================================================
+
+func readFile(fileName string) ([]byte, error) {
 	b, err := os.ReadFile(fileName)
 	if err != nil {
-		panic(err)
+		return []byte{}, errors.New("Unable to Readfile")
 	}
 
-	dataStr := string(b)
-	return dataStr
+	return b, nil
 }
+
+func writeFile(fileName string, data []byte) error {
+	err := os.WriteFile(fileName, data, 0664)
+	if err != nil {
+		return errors.New("Unable to Writefile")
+	}
+	return nil
+}
+
+func marshal(listTodo []todo) ([]byte, error) {
+	b, err := json.Marshal(listTodo)
+	if err != nil {
+		return []byte{}, errors.New("Unable to Marshal")
+	}
+	return b, nil
+}
+
+func unmarshal(arrByte []byte) ([]todo, error) {
+	t := []todo{}
+	err := json.Unmarshal(arrByte, &t)
+	if err != nil {
+		return []todo{}, errors.New("Unable to Unmarshal")
+	}
+
+	return t, nil
+}
+
+// func toLine(todo todo) (string, error) {
+// 	if todo.Id == "" {
+// 		return "", errors.New("empty todo Id")
+// 	}
+
+// 	return fmt.Sprintf("%s: %s", todo.Id, todo.Data), nil
+// }
+
+// // TODO: change input type
+// func toLines(todos []todo) (string, error) {
+// 	s := ""
+// 	for _, t := range todos {
+// 		line, err := toLine(t)
+// 		if err != nil {
+// 			return "", err
+// 		}
+
+// 		s += line + "\n"
+// 	}
+
+// 	return s, nil
+// }
+
+// [{"name":"pak","id": 3,"Age": 10},{"name":"yong","Age": 15},{"name": "art","Age": 20}]
+// func fromLine(line string) (todo, error) {
+// 	words := strings.Split(line, ":")
+// 	if len(words) != 2 {
+// 		return todo{}, fmt.Errorf("invalid line format: %s", line)
+// 	}
+
+// 	t := todo{
+// 		Id:   words[0],
+// 		Data: words[1],
+// 	}
+// 	fmt.Println("Id =", t.Id)
+// 	fmt.Println("Data = ", t.Data)
+// 	fmt.Println("todo = ", t)
+
+// 	return t, nil
+// }
+
+// func fromLines(linesStr string) (map[string]todo, error) {
+// 	lines := strings.Split(linesStr, "\n")
+// 	todos := make(map[string]todo)
+// 	for _, line := range lines {
+// 		t, err := fromLine(line)
+// 		if err != nil {
+// 			return nil, err
+// 		}
+
+// 		todos[t.Id] = t
+// 	}
+
+// 	return todos, nil
+// }
+
+// func fromMapToList(todos map[string]todo) []todo {
+// 	result := []todo{}
+// 	for k := range todos {
+// 		result = append(result, todos[k])
+// 	}
+
+// 	return result
+// }
